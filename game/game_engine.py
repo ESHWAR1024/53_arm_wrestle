@@ -31,6 +31,14 @@ class GameEngine:
         
         self.frame_counter = 0  # drives warning indicator animations
         
+        # Counter-surge bonus state
+        self.counter_surge_window = 30    # frames at start of COOLDOWN that count as the window
+        self.counter_surge_active = False # whether the bonus is currently active
+        self.counter_surge_timer = 0      # remaining frames of bonus
+        self.counter_surge_duration = 120 # ~2 seconds of bonus at 60fps
+        self.counter_surge_push_mult = 2.0  # push strength multiplier during bonus
+        self.counter_surge_recovery_mult = 3.0  # stamina recovery multiplier during bonus
+        
         self.font_big = pygame.font.SysFont(None, 44)
         self.font_med = pygame.font.SysFont(None, 26)
         self.font_warn = pygame.font.SysFont(None, 30)
@@ -45,16 +53,39 @@ class GameEngine:
             if self.stamina <= 10:
                 return
                 
+            # Check if player is pushing during the counter-surge window
+            in_counter_window = (
+                self.ai_phase == "COOLDOWN"
+                and self.ai_phase_timer <= self.counter_surge_window
+                and not self.counter_surge_active
+            )
+
+            # Determine push strength (doubled during counter-surge bonus)
+            push_strength = 4.2
+            if self.counter_surge_active:
+                push_strength *= self.counter_surge_push_mult
+
             if event.key == pygame.K_LEFT:
                 if self.last_key != pygame.K_LEFT: 
-                    self.arm_position -= 4.2
+                    self.arm_position -= push_strength
                     self.stamina = max(0.0, self.stamina - 2.0)
                     self.last_key = pygame.K_LEFT
+                    if in_counter_window:
+                        self._activate_counter_surge()
             elif event.key == pygame.K_RIGHT:
                 if self.last_key != pygame.K_RIGHT: 
-                    self.arm_position -= 4.2
+                    self.arm_position -= push_strength
                     self.stamina = max(0.0, self.stamina - 2.0)
                     self.last_key = pygame.K_RIGHT
+                    if in_counter_window:
+                        self._activate_counter_surge()
+
+    def _activate_counter_surge(self):
+        """Activate counter-surge bonus: stamina boost + double push strength."""
+        self.counter_surge_active = True
+        self.counter_surge_timer = self.counter_surge_duration
+        # Instant stamina recovery burst
+        self.stamina = min(self.max_stamina, self.stamina + 25.0)
 
     def update(self):
         if self.game_state != "PLAYING":
@@ -85,8 +116,19 @@ class GameEngine:
         ai_variance = random.uniform(0.3, 1.0)
         self.arm_position += self.ai_strength * ai_variance * phase_multiplier
 
+        # Tick down counter-surge bonus timer
+        if self.counter_surge_active:
+            self.counter_surge_timer -= 1
+            if self.counter_surge_timer <= 0:
+                self.counter_surge_active = False
+                self.counter_surge_timer = 0
+
+        # Stamina recovery (boosted during counter-surge)
+        recovery_rate = 0.8
+        if self.counter_surge_active:
+            recovery_rate *= self.counter_surge_recovery_mult
         if self.stamina < self.max_stamina:
-            self.stamina = min(self.max_stamina, self.stamina + 0.8)
+            self.stamina = min(self.max_stamina, self.stamina + recovery_rate)
 
         if self.arm_position <= -self.target_limit:
             self.winner = "PLAYER"
@@ -104,6 +146,8 @@ class GameEngine:
         self.ai_phase = "NORMAL"
         self.ai_phase_timer = 0
         self.frame_counter = 0
+        self.counter_surge_active = False
+        self.counter_surge_timer = 0
 
     def render(self, screen):
         screen.fill((25, 28, 35))
@@ -182,6 +226,30 @@ class GameEngine:
             # "EXHAUSTED" label
             exhaust_text = self.font_warn.render("EXHAUSTED", True, (255, int(80 + 80 * pulse), int(80 * pulse)))
             screen.blit(exhaust_text, (400, 445))
+
+        # Counter-surge bonus active indicator: golden/cyan glow
+        if self.counter_surge_active and self.game_state == "PLAYING":
+            pulse = (math.sin(self.frame_counter * 0.12) + 1) / 2
+            alpha = int(80 + 120 * pulse)
+            # Cyan/gold glow overlay on table
+            cs_overlay = pygame.Surface((self.width - 80, 310), pygame.SRCALPHA)
+            cs_overlay.fill((50, 220, 255, int(alpha * 0.15)))
+            screen.blit(cs_overlay, (40, 100))
+            # Gold border
+            gold_color = (255, int(200 + 55 * pulse), 50)
+            pygame.draw.rect(screen, gold_color, pygame.Rect(40, 100, self.width - 80, 310), width=4, border_radius=14)
+            # "COUNTER-SURGE!" text banner
+            cs_text = self.font_warn.render("\u26a1 COUNTER-SURGE!", True, (255, int(220 + 35 * pulse), 60))
+            cs_x = self.width // 2 - cs_text.get_width() // 2
+            cs_bg = pygame.Surface((cs_text.get_width() + 20, 32), pygame.SRCALPHA)
+            cs_bg.fill((40, 160, 200, alpha))
+            screen.blit(cs_bg, (cs_x - 10, 420))
+            screen.blit(cs_text, (cs_x, 422))
+            # Timer bar showing remaining bonus time
+            ratio = self.counter_surge_timer / self.counter_surge_duration
+            timer_w = int(200 * ratio)
+            timer_rect = pygame.Rect(self.width // 2 - 100, 456, timer_w, 8)
+            pygame.draw.rect(screen, (50, 220, 255), timer_rect, border_radius=4)
 
         if self.game_state == "GAME_OVER":
             overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
