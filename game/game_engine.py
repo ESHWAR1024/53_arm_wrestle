@@ -29,8 +29,11 @@ class GameEngine:
         self.ai_surge_multiplier = 2.5   # force multiplier during surge
         self.ai_cooldown_multiplier = 0.4  # force multiplier during cooldown
         
+        self.frame_counter = 0  # drives warning indicator animations
+        
         self.font_big = pygame.font.SysFont(None, 44)
         self.font_med = pygame.font.SysFont(None, 26)
+        self.font_warn = pygame.font.SysFont(None, 30)
 
     def handle_event(self, event):
         if self.game_state != "PLAYING":
@@ -56,6 +59,8 @@ class GameEngine:
     def update(self):
         if self.game_state != "PLAYING":
             return
+
+        self.frame_counter += 1
 
         # AI surge cycle: advance timer and transition between phases
         self.ai_phase_timer += 1
@@ -98,6 +103,7 @@ class GameEngine:
         self.game_state = "PLAYING"
         self.ai_phase = "NORMAL"
         self.ai_phase_timer = 0
+        self.frame_counter = 0
 
     def render(self, screen):
         screen.fill((25, 28, 35))
@@ -144,6 +150,38 @@ class GameEngine:
         pygame.draw.rect(screen, (45, 50, 60), stamina_bg, border_radius=6)
         bar_color = (60, 210, 100) if self.stamina > 25 else (220, 60, 60)
         pygame.draw.rect(screen, bar_color, stamina_fill, border_radius=6)
+
+        # --- WARNING INDICATORS ---
+        # AI Surge warning: pulsing red/orange banner at top of the table
+        if self.ai_phase == "SURGE" and self.game_state == "PLAYING":
+            pulse = (math.sin(self.frame_counter * 0.15) + 1) / 2  # 0.0 – 1.0
+            alpha = int(60 + 140 * pulse)
+            # Red tint overlay on the table
+            surge_overlay = pygame.Surface((self.width - 80, 310), pygame.SRCALPHA)
+            surge_overlay.fill((255, 40, 40, int(alpha * 0.25)))
+            screen.blit(surge_overlay, (40, 100))
+            # Flashing border around table
+            border_color = (255, int(60 + 80 * pulse), 30)
+            pygame.draw.rect(screen, border_color, pygame.Rect(40, 100, self.width - 80, 310), width=4, border_radius=14)
+            # Warning text banner
+            warn_text = self.font_warn.render("\u26a0 AI POWER SURGE!", True, (255, int(180 * pulse), 50))
+            banner_x = self.width // 2 - warn_text.get_width() // 2
+            banner_bg = pygame.Surface((warn_text.get_width() + 20, 32), pygame.SRCALPHA)
+            banner_bg.fill((180, 30, 20, alpha))
+            screen.blit(banner_bg, (banner_x - 10, 420))
+            screen.blit(warn_text, (banner_x, 422))
+
+        # Player exhaustion warning: shown when stamina <= 10 (input locked)
+        if self.stamina <= 10 and self.game_state == "PLAYING":
+            pulse = (math.sin(self.frame_counter * 0.2) + 1) / 2
+            alpha = int(100 + 155 * pulse)
+            # Red tint behind stamina bar
+            exhaust_bg = pygame.Surface((260, 30), pygame.SRCALPHA)
+            exhaust_bg.fill((200, 30, 30, int(alpha * 0.4)))
+            screen.blit(exhaust_bg, (130, 444))
+            # "EXHAUSTED" label
+            exhaust_text = self.font_warn.render("EXHAUSTED", True, (255, int(80 + 80 * pulse), int(80 * pulse)))
+            screen.blit(exhaust_text, (400, 445))
 
         if self.game_state == "GAME_OVER":
             overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
