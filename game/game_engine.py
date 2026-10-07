@@ -20,6 +20,15 @@ class GameEngine:
         self.game_state = "PLAYING"
         self.ai_strength = 0.35  
         
+        # AI surge cycle state
+        self.ai_phase = "NORMAL"       # NORMAL, SURGE, or COOLDOWN
+        self.ai_phase_timer = 0        # frame counter for current phase
+        self.ai_normal_duration = 300  # ~5 seconds at 60fps
+        self.ai_surge_duration = 120   # ~2 seconds at 60fps
+        self.ai_cooldown_duration = 180  # ~3 seconds at 60fps
+        self.ai_surge_multiplier = 2.5   # force multiplier during surge
+        self.ai_cooldown_multiplier = 0.4  # force multiplier during cooldown
+        
         self.font_big = pygame.font.SysFont(None, 44)
         self.font_med = pygame.font.SysFont(None, 26)
 
@@ -48,8 +57,28 @@ class GameEngine:
         if self.game_state != "PLAYING":
             return
 
+        # AI surge cycle: advance timer and transition between phases
+        self.ai_phase_timer += 1
+        if self.ai_phase == "NORMAL" and self.ai_phase_timer >= self.ai_normal_duration:
+            self.ai_phase = "SURGE"
+            self.ai_phase_timer = 0
+        elif self.ai_phase == "SURGE" and self.ai_phase_timer >= self.ai_surge_duration:
+            self.ai_phase = "COOLDOWN"
+            self.ai_phase_timer = 0
+        elif self.ai_phase == "COOLDOWN" and self.ai_phase_timer >= self.ai_cooldown_duration:
+            self.ai_phase = "NORMAL"
+            self.ai_phase_timer = 0
+
+        # Apply force multiplier based on current AI phase
+        if self.ai_phase == "SURGE":
+            phase_multiplier = self.ai_surge_multiplier
+        elif self.ai_phase == "COOLDOWN":
+            phase_multiplier = self.ai_cooldown_multiplier
+        else:
+            phase_multiplier = 1.0
+
         ai_variance = random.uniform(0.3, 1.0)
-        self.arm_position += self.ai_strength * ai_variance
+        self.arm_position += self.ai_strength * ai_variance * phase_multiplier
 
         if self.stamina < self.max_stamina:
             self.stamina = min(self.max_stamina, self.stamina + 0.8)
@@ -67,6 +96,8 @@ class GameEngine:
         self.last_key = None
         self.winner = None
         self.game_state = "PLAYING"
+        self.ai_phase = "NORMAL"
+        self.ai_phase_timer = 0
 
     def render(self, screen):
         screen.fill((25, 28, 35))
